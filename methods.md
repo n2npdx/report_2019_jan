@@ -24,7 +24,6 @@ These steps were done to take the raw data files to a state that can either be s
 3. Send campsite reports through `spatialjoin_campsitereports.py`.
   * File In: CSV with no blank rows, removed deidentifying columns.
   * Joins lat-long coordinates to RLIS neighborhoods in geopandas.
-  * ISSUE: Messes up Boolean values; it converts all booleans to integers, which then merges NA values and False values, as both are 0. Can't send through the entire campsite reports; needs to filter out all columns except for necessary ones.
   * File Out: CSV/GeoJSON with only neighborhood, lat-long, and report date and ID.
 
 4. Join the spatial-joined data CSV (3) with the deidentified CSV in (2).
@@ -36,8 +35,6 @@ These steps were done to take the raw data files to a state that can either be s
 5. Convert the new CSV to GeoJSON.
 
 
-
-
 ## One Point of Contact/HUCIRP Campsite Sweeps
 
 1. Download merged file from Google Drive (merging done manually); convert to CSV.
@@ -47,17 +44,3 @@ These steps were done to take the raw data files to a state that can either be s
   * File In: CSV with lat-long
   * Creates spatial column, and joins to RLIS neighborhoods in geopandas.
   * File Out: CSV and GeoJSON with neighborhood column and geometry column added.
-
-
-
-
-
-## Crime reports
-
-1. 
-
-
-
-
-
-## Dispatched calls
