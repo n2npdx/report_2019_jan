@@ -1,0 +1,9 @@
+pandas
+geopandas
+shapely
+matplotlib
+descartes
+pysal
+geopy==0.99
+psycopg2
+rtree

@@ -1,0 +1,64 @@
+---
+title: "1-page Crime Records and Dispatched Calls Report for Neighbor2Neighbor Website"
+author: "Katy McKinney-Bock"
+date: "1/13/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Crime Reports
+
+### CEID Boundaries, Person and Property Crime Subset
+
+The Central Eastside Industrial Council, in their webpage advocating the need for an ESD in the CEID, claims that "At the same time, increases in unwanted crime and grime, including a 64% increase in crimes against people and property in the past year, have pervaded the district and threaten Central Eastside’s emerging reputation and business viability."
+
+Our findings fail to replicate the CEIC's claim of a 64% increase in crime. Looking from 2015-2018 there is no significant upward trend in crime reports, and a comparison of all data available in 2017 and 2018 (January-October, which was the data available for 2018 at the time of analysis) shows a 5.7% increase in crime reports, which is not an upwards trend given the variance present in the data. Our time series model predicts no significant increase over the next year.
+
+We took the Portland Police Bureau's Crime Reports dataset as our data source, assuming that this was likely the data source for the CEIC's analysis as well (though no source is stated). We used Venture Portland's business district boundary map to obtain a polygon of the boundaries for the CEID, and subset the crime reports data down to crime reports with lat/long coordinates that fall within those boundaries (http://ventureportland.org/business-districts/business-district-map/). We then subset out person and property crimes, using the offense categories that are reported through the Portland Police Bureau (https://www.portlandoregon.gov/police/71978).
+
+This gave us a total of all person and property crime reports for the CEID over the total period that this data is available in a comparable format through the PPB (2015-2018); the police changed their data reporting structures in 2015 and so data prior to 2015 is not directly comparable (see https://www.portlandoregon.gov/police/71978).
+
+Here is a plot by month showing the number of person and property crimes in the CEID. Notably, there is no clear upwards trend in the data over the entire time period, directly contrary to the claim that crime has risen in the area from November 2017 to October 2018.
+
+```{r CEID crime report, echo=FALSE, out.width="450px"}
+knitr::include_graphics("CEID_PersonPropertyCrimes_20152018.png")
+```
+
+An ARIMA model (a predictive model for time series data) was fit to the data, and the model predicts no upward trend in crime reports over the next 12 months.
+
+When running totals are taken into place, a comparison of the 10-month period January-October 2017 to January-October 2018 (which is more of an apples-to-apples comparison - though our analysis of the dataset does not show seasonality patterns that fit to the 12-month year) shows only a 5.7% increase in crime. Keep in mind that this number isn't normalized to any population increase that may have happened during this time (which means the 5.7% increase might even be smaller, per capita). 
+
+
+### City of Portland, All Crimes
+
+Across all crime types, the city of Portland saw a 7% increase in total crime reports from 2016 to 2017, and a 3.5% increase in total crime reports from 2017 to 2018 (Jan-Oct). 
+
+Some crime reports do not provide an address (or corresponding lat-long), to protect identity. We excluded these types of crime from our analysis, which were relatively systematic (kidnapping and sexual violence), as we were unable to subset those crimes down spatially to neighborhoods. The total crime report count in Portland excludes these reports, which is 46,163 reports (out of 207,602 from 2015-2018). This was in order to make comparison in growth for all Portland and growth for the neighborhood subsets. 
+
+
+### Hosford-Abernethy/Buckman/Kerns (RLIS Neighborhood Boundaries), All Crimes
+
+Across all crime types (with lat-long coordinates), the three neighborhoods of Hosford-Abernethy, Buckman and Kerns (together) saw a 2.2% change in total crime reports from 2016 to 2017, and a -1.2% change in total crime reports from 2017 to 2018 (Jan-Oct). 
+
+Note that the CEID boundaries (above) are a subset of these three neighborhoods, on the east side of all of them. The data were subset by neighborhood using RLIS neighborhood boundaries rather than the PPB boundaries, for consistency and comparability with the other datasets (campsites) in this report (PPB boundaries distinguish East/West Buckman, among a couple of other minor differences).
+
+
+### CEID, All Crimes
+
+The CEID saw a -1.1% change in person and property crime reports from 2016-2017, and a 5.7% change in person and property crimes from 2017 to 2018, as reported above.
+
+For all crime, the CEID saw a -1.6% change in crime reports from 2016-2017, and a 6.2% change from 2017-2018 (the difference is that society crimes are included in this subset, as opposed to only person and property crimes).
+
+
+# Summary
+
+This is a high level analysis at summarizing totals in three spatial subsets, and one deeper dive into trends over time in the CEID. There is a shortcoming of this analysis in that it is not normalized to population growth, but given the short timeframe of the dataset this effect will be relatively small and in the direction of making any increases in reporting smaller. Neighbor2neighbor plans a deeper dive into policing and crime reporting, and if you're interested in volunteering, please contact n2npdx@gmail.com.
+
+
+
+
+

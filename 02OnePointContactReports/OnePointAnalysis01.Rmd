@@ -1,0 +1,811 @@
+---
+title: "One Point of Contact Reports"
+output: html_notebook
+---
+
+# Imports and Cleaning
+```{r library}
+library(tidyverse)
+library(stringr)
+library(readr)
+library(jsonlite)
+library(ggplot2)
+library(ISOweek)
+library(outliers)
+```
+
+```{r data}
+# Requirements:
+#     One Point Reports file must have a neighborhoods column to do subset; can be created via 
+#     spatialjoin.py.
+#
+#     NOTE TO SELF: I need to re-clean and REPROJECT this dataset using the ipython notebook.
+#     Can only do this once I figure out which coordinate system to project to (talk with Lynn)
+#     Then, I can do the cleaning and re-estimate the number of campers. It will then go into R; maybe 
+#     some changes to the import and cleaning functions may have to happen.
+
+ONEPOINT = "../data/onepointcontactreports/campsite_reports_processed_deidentified_neighborhoods_joined_02.csv"
+UNIQUE = "../data/onepointcontactreports/UniqueSites/uniquesites.csv"
+
+```
+
+Plot Functions:
+```{r functions}
+month_counts_plot <- function(data, date_col, counts_col, title, count_axis_label, fill_color="darkred")
+          {
+          plot <- ggplot(data, aes(date_col, counts_col)) +
+                   geom_bar(stat="identity", fill=fill_color) +
+                   ggtitle(title) +
+                   xlab("Date") + ylab(count_axis_label) +
+                   theme(axis.text.x=element_text(size  = 10,
+                                        angle = 45,
+                                        hjust = 1,
+                                        vjust = 1))
+          return(plot)
+          }
+```
+
+Read in file, convert dates:
+```{r read in file and date column}
+reports<-read.csv(file=ONEPOINT,header=TRUE,na.strings="")
+
+out<-str_split(reports$Date.Created, " ")
+dttime<-data.frame(do.call(rbind, out), reports)
+colnames(dttime)[1] <- "Date.Created.New"
+colnames(dttime)[2] <- "Time.Created"
+reports <- dttime
+rm(dttime, out)
+
+reports<- cbind(reports, as.Date(reports$Date.Created.New, "%m/%d/%y"))
+colnames(reports)[colnames(reports)=="as.Date(reports$Date.Created.New, \"%m/%d/%y\")"] <- "NewReportDate"
+```
+
+Filter out Vehicles:
+```{r vehicle filter for reports}
+reports <-  
+            reports %>%
+               filter(!(reports[23] == TRUE))
+
+#NEED TO KEEP THE BLANKS
+write.csv(reports, file="reports_vehicle_filter_final.csv")
+```
+
+
+# Monthly Reports
+Aggregate by month:
+```{r full reports month aggregation}
+ReportDate2 <- as.Date(reports$NewReportDate)
+short.date = strftime(ReportDate2, "%Y-%m")
+reports.month = aggregate(Date.Created.New~short.date, FUN = length, data=reports)
+```
+
+What is average number of reports per week? Per month?
+```{r full reports average and median}
+m.avg<- mean(reports.month$Date.Created.New)
+m.med<- median(reports.month$Date.Created.New)
+print("By Month, average and median:") 
+m.avg
+m.med
+```
+
+3-neighborhood subset:
+```{r make 3neigh subset}
+reports.sub <- 
+  reports %>%
+  filter(NAME %in% c("HOSFORD-ABERNETHY", "BUCKMAN", "KERNS"))
+```
+
+3-neighborhood subset, aggregated:
+```{r 3neigh month aggregation}
+ReportDate2 <- as.Date(reports.sub$NewReportDate)
+short.date = strftime(ReportDate2, "%Y-%m")
+reports.sub.month = aggregate(Date.Created.New~short.date, FUN = length, data=reports.sub)
+```
+
+Plots
+```{r month plots full and sub}
+MonthPlot <- month_counts_plot(reports.month, reports.month$short.date, reports.month$Date.Created.New, 
+                               "One Point of Contact Reports  \n 2015-2018", "Number of Sites Reported")
+MonthPlot
+
+MonthPlot.sub <- month_counts_plot(reports.sub.month, reports.sub.month$short.date, 
+                                   reports.sub.month$Date.Created.New,                                
+                          "One Point of Contact Reports , Buckman/Hosford-Abernethy/Kerns  \n 2015-2018", 
+                                   "Number of Sites Reported",
+                                   "purple")
+MonthPlot.sub <- MonthPlot.sub +
+                 scale_y_continuous(limit = c(0, 600))
+MonthPlot.sub
+
+MonthPlot.sub_samescale <- MonthPlot.sub +
+                           scale_y_continuous(limit = c(0, 4000))
+MonthPlot.sub_samescale
+
+ggsave(filename="OnePointofContact_MonthPlot.pdf", plot=MonthPlot)
+ggsave(filename="OnePointofContact_MonthPlot_3neighborhoods.pdf", plot=MonthPlot.sub)
+ggsave(filename="OnePointofContact_MonthPlot_3neighborhoods_samescale.pdf", plot=MonthPlot.sub_samescale)
+```
+
+
+# Weekly Reports:
+Add date column by week:
+```{r full reports daily to weekly report date conversion}
+# date2ISOweek("2018-03-02")
+# ISOweek2date("2018-W09-1")
+
+WeekDateISO <-  date2ISOweek(reports$NewReportDate)
+WeekDateISO <- 
+                data.frame(WeekDateISO) %>%
+                  rowwise() %>%
+                  mutate(WeekDateISO_stripped = substring(WeekDateISO,0,8)) %>%
+                  mutate(WeekDateISO_new = paste0(WeekDateISO_stripped, "-1"))
+WeekDateFinal <- ISOweek2date(WeekDateISO$WeekDateISO_new)
+reports <- cbind(WeekDateFinal, reports)
+```
+
+Aggregate by week:
+```{r full reports weekly aggregation}
+Week = strftime(reports$WeekDateFinal, "%Y-%m-%d")
+reports.week <-  aggregate(Date.Created~Week,FUN=length,data=reports)
+```
+
+3-neighborhood subset, with weekdate:
+```{r 3neigh sub from reports data again with weekly column}
+reports.sub <- 
+  reports %>%
+  filter(NAME %in% c("HOSFORD-ABERNETHY", "BUCKMAN", "KERNS"))
+```
+
+3-neighborhood subset, aggregated:
+```{r 3neigh weekly aggregation}
+week.date = strftime(reports.sub$WeekDateFinal, "%Y-%m-%d")
+reports.sub.week = aggregate(Date.Created~week.date, FUN = length, data=reports.sub)
+```
+
+Plots
+```{r week plots full and 3neigh}
+WeekPlot <- month_counts_plot(reports.week, reports.week$Week, reports.week$Date.Created, 
+                               "One Point of Contact Reports  \n 2015-2018", "Number of Sites Reported")
+WeekPlot
+
+WeekPlot.sub <- month_counts_plot(reports.sub.week, reports.sub.week$week.date, 
+                                   reports.sub.week$Date.Created,                                
+                          "One Point of Contact Reports , Buckman/Hosford-Abernethy/Kerns  \n 2015-2018", 
+                                   "Number of Sites Reported",
+                                   "purple")
+WeekPlot.sub <- WeekPlot.sub +
+                 scale_y_continuous(limit = c(0, 200))
+WeekPlot.sub
+
+WeekPlot.sub_samescale <- WeekPlot.sub +
+                           scale_y_continuous(limit = c(0, 800))
+WeekPlot.sub_samescale
+
+ggsave(filename="OnePointofContact_WeekPlot.pdf", plot=WeekPlot)
+ggsave(filename="OnePointofContact_WeekPlot_3neighborhoods.pdf", plot=WeekPlot.sub)
+ggsave(filename="OnePointofContact_WeekPlot_3neighborhoods_samescale.pdf", plot=WeekPlot.sub_samescale)
+```
+
+
+# Unique Sites vs Campsite Reports with Vehicles
+
+NOTES:
+Vehicles don't appear to be reported T/F until around 6/2015. Note the above restrictions on campsite reports. 
+
+Reload reports, with vehicles:
+```{r reload reports to keep vehicles and add week conversion}
+reports.vehicles<-read.csv(file=ONEPOINT,header=TRUE,na.strings="")
+
+out<-str_split(reports.vehicles$Date.Created, " ")
+dttime<-data.frame(do.call(rbind, out), reports.vehicles)
+colnames(dttime)[1] <- "Date.Created.New"
+colnames(dttime)[2] <- "Time.Created"
+reports.vehicles <- dttime
+rm(dttime, out)
+
+reports.vehicles<- cbind(reports.vehicles, as.Date(reports.vehicles$Date.Created.New, "%m/%d/%y"))
+colnames(reports.vehicles)[colnames(reports.vehicles)=="as.Date(reports.vehicles$Date.Created.New, \"%m/%d/%y\")"] <- "NewReportDate"
+
+
+WeekDateISO <-  date2ISOweek(reports.vehicles$NewReportDate)
+WeekDateISO <- 
+                data.frame(WeekDateISO) %>%
+                  rowwise() %>%
+                  mutate(WeekDateISO_stripped = substring(WeekDateISO,0,8)) %>%
+                  mutate(WeekDateISO_new = paste0(WeekDateISO_stripped, "-1"))
+WeekDateFinal <- ISOweek2date(WeekDateISO$WeekDateISO_new)
+reports.vehicles <- cbind(WeekDateFinal, reports.vehicles)
+```
+
+Aggregate with vehicles, by week:
+```{r reports with vehicles weekly aggregation}
+Week = strftime(reports.vehicles$WeekDateFinal, "%Y-%m-%d")
+reports.vehicles.week <-  aggregate(Date.Created~Week,FUN=length,data=reports.vehicles)
+```
+
+```{r write reports with vehicles and rep.veh weekly agg to json for ara}
+reports.vehicles %>% 
+    toJSON() %>%
+    write_lines("OnePointofContact_ReportsWithVehicles_AllPDX.json")
+
+names(reports.vehicles.week) = c("Week", "Count")
+reports.vehicles.week %>% 
+    toJSON() %>%
+    write_lines("OnePointofContact_ReportsWithVehicles_AllPDX_weeklyaggregate.json")
+
+write.csv(reports.vehicles.week, "OnePointofContact_ReportsWithVehicles_AllPDX_weeklyaggregate.csv")
+```
+
+
+```{r read estimated unique campsites and add counts with vehicles column}
+unique <- read.csv(UNIQUE)
+Week <- as.Date(unique$Date, "%m/%d/%y")
+unique <- cbind(Week, unique)
+
+reports.vehicles.week$Week <- as.Date(reports.vehicles.week$Week)
+
+all_counts1 <- left_join(unique, reports.vehicles.week, by="Week")
+colnames(all_counts1) <- c("Week", "Date" , "TotalReports_CityCount", "EstimatedSites",  "Count_AllReports")
+
+reports.week$Week <- as.Date(reports.week$Week)
+all_counts <- left_join(all_counts1, reports.week, by="Week")
+colnames(all_counts) <- c("Week", "Date" , "TotalReports_CityCount", "EstimatedSites",  "Count_AllReports", "Count_NoVehicles")
+```
+
+```{r plot with campsite reports with and wo vehicles and unique sites}
+
+alllines <- ggplot(all_counts, aes(x=Week)) +
+              geom_line(aes(y = EstimatedSites, colour = "EstimatedSites")) + 
+              geom_point(aes(y = EstimatedSites, colour = "EstimatedSites")) + 
+              geom_line(aes(y = Count_AllReports, colour = "Count_AllReports")) +
+              geom_point(aes(y = Count_AllReports, colour = "Count_AllReports")) + 
+              geom_line(aes(y = Count_NoVehicles, colour = "Count_NoVehicles")) +
+              geom_point(aes(y = Count_NoVehicles, colour = "Count_NoVehicles"))
+
+alllines
+
+
+ggsave(filename="OnePointofContact_3Lines.pdf", plot=alllines)
+```
+
+Make a plot of the unique campsites reported each week, alone.
+```{r plot with unique est sites alone weekly plus average}
+mean(all_counts$EstimatedSites)
+sd(all_counts$EstimatedSites)
+  
+estsites <- ggplot(all_counts, aes(x=Week)) +
+              geom_line(aes(y = EstimatedSites, colour = "EstimatedSites")) + 
+              geom_point(aes(y = EstimatedSites, colour = "EstimatedSites")) +
+              ylim(0, 200)
+
+estsites
+
+ggsave(filename="OnePointofContact_EstimatedSites.pdf", plot=estsites)
+```
+
+Make a plot of the count of campsites (without vehicles) reported each week PER unique campsite reported.
+NOTE: This is _on average_, as one campsite may have gotten 30 reports, and another just 1.
+```{r }
+all_counts <-
+        all_counts %>%
+        mutate(Reports_per_UniqueSite = Count_NoVehicles / EstimatedSites)
+
+plot <- ggplot(all_counts, aes(Week)) +
+        geom_line(aes(y = Reports_per_UniqueSite, colour = "Reports_per_UniqueSite")) + 
+        ylim(0,6)
+ggsave(filename="OnePointofContact_Reports_per_UniqueSite_Estimated.pdf", plot=plot)
+```
+
+
+# Bar plot with the total counts (as well as averages per week) of reports for 2015, 2016, 2017, 2018
+
+Aggregate by Year, no Vehicles
+```{r all reports no vehicles yearly aggregate}
+ReportDate2 <- as.Date(reports$NewReportDate)
+Year = strftime(ReportDate2, "%Y")
+reports.annual = aggregate(Date.Created.New~Year, FUN = length, data=reports)
+```
+
+Aggregate by Year, with Vehicles
+```{r all reports WITH vehicles yearly aggregate}
+ReportDate2 <- as.Date(reports.vehicles$NewReportDate)
+Year = strftime(ReportDate2, "%Y")
+reports.vehicles.annual = aggregate(Date.Created.New~Year, FUN = length, data=reports.vehicles)
+```
+
+Bar Plot, annual counts (with Vehicles)
+```{r annual bar plot with vehicles}
+reports.vehicles.annual2 <-
+    reports.vehicles.annual %>%
+    filter(!(Year=="2015"))
+
+annualplot <- month_counts_plot(reports.vehicles.annual2, reports.vehicles.annual2$Year, reports.vehicles.annual2$Date.Created.New, 
+                               "One Point of Contact Reports  \n 2016-2018", "Total Counts", "dark orange")
+
+annualplot
+
+ggsave(filename="OnePointofContact_Reports_AnnualTotal.pdf", plot=annualplot)
+```
+
+Bar Plot, Average Reports per week for the year.
+
+3-neighborhood subset:
+```{r make 3neigh subset for reports with vehicles}
+reports.vehicles.sub <- 
+  reports.vehicles %>%
+  filter(NAME %in% c("HOSFORD-ABERNETHY", "BUCKMAN", "KERNS"))
+```
+Aggregate by Year, with Vehicles
+```{r 3neigh sub yearly aggregate all reports with vehicles}
+ReportDate2 <- as.Date(reports.vehicles.sub$NewReportDate)
+Year = strftime(ReportDate2, "%Y")
+reports.vehicles.sub.annual = aggregate(Date.Created.New~Year, FUN = length, data=reports.vehicles.sub)
+```
+
+Bar Plot, annual counts (with Vehicles)
+```{r bar plot 3neigh annual}
+reports.vehicles.sub.annual2 <-
+    reports.vehicles.sub.annual %>%
+    filter(!(Year=="2015"))
+
+annualplot.sub <- month_counts_plot(reports.vehicles.sub.annual2, reports.vehicles.sub.annual2$Year, reports.vehicles.sub.annual2$Date.Created.New, 
+                               "One Point of Contact Reports  \n 2016-2018", "Hosford-Abernethy, Buckman, Kerns", "dark orange")
+
+annualplot.sub
+
+ggsave(filename="OnePointofContact_Reports_AnnualTotal_3neighborhoods.pdf", plot=annualplot.sub)
+```
+
+
+# Ratio of sweeps to reports, 2018:
+```{r}
+all_counts$Week
+all_counts$Count_AllReports
+
+all_counts.2018 <- all_counts %>%
+                    filter(Week >= as.Date("2018-01-01") & Week <="2018-11-25")
+
+sum(all_counts.2018$Count_AllReports) / sum(all_counts.2018$EstimatedSites)
+
+```
+
+# Write out aggregates to JSON
+```{r write all files to JSON}
+names(reports.month) = c("Month", "Count")
+reports.month %>% 
+    toJSON() %>%
+    write_lines("OnePointofContact_CountsbyMonth.json")
+
+names(reports.week) = c("Week", "Count")
+reports.week %>% 
+    toJSON() %>%
+    write_lines("OnePointofContact_CountsbyWeek.json")
+
+names(reports.sub.month) = c("Month", "Count")
+reports.sub.month %>% 
+    toJSON() %>%
+    write_lines("OnePointofContact_CountsbyMonth_3neighborhood.json")
+
+names(reports.sub.week) = c("Week", "Count")
+reports.sub.week %>% 
+    toJSON() %>%
+    write_lines("OnePointofContact_CountsbyWeek_3neighborhood.json")
+
+all_counts %>% 
+    toJSON() %>%
+    write_lines("OnePointofContact_AllCounts_AllPDX.json")
+
+```
+
+# Next Step: Analysis of qualitative information, 'problematic' criteria.
+
+Improve Header Names
+```{r change header names for reports with vehicles}
+colnames(reports.vehicles)
+betternames<-c("WeekDate", "Date.Created.New", "Time.Created", "IDX", 
+               "Date.Created", "Date.Received", 
+               "ItemID","Status","Follow-ups", "Location1","Location2","Location3",
+               "Address.ID", "Property.ID", "State.ID", "City", 
+               "HowLongSite","Occupied",
+               "NumCampers_str",        
+               "Children","Dogs","MedicalFragility","NumTentsStructures","Vehicle","Aggression",
+               "IntoxDrugs",
+               "ObstructsRightofWay","MisusePublicSpaces","StructuresTentsPresent","ExcessiveTrash",
+               "DamageEnvironment","lon","lat","coordinates", "index_right", "NAME", "SUM_AREA",
+               "SUM_SqMile", "NewReportDate")
+
+colnames(reports.vehicles)<-betternames
+```
+
+Exploration of survey fields/responses of Full Data over ALL time, location
+```{r reports.vehicles survey responses aggregated}
+#Is the site occupied?
+occ<-aggregate(IDX~Occupied,FUN=length,data=reports.vehicles)
+occ
+
+#Children present
+children<-aggregate(IDX~Children,FUN=length,data=reports.vehicles)
+children
+
+#Dogs present
+dogs<-aggregate(IDX~Dogs,FUN=length,data=reports.vehicles)
+dogs
+
+#Medically Fragile people
+med<-aggregate(IDX~MedicalFragility,FUN=length,data=reports.vehicles)
+med
+```
+
+Distribution of the "Problem" fields/questions on the survey for the full dataset
+```{r problem field analysis aggression}
+#Aggressive Behavior
+P01<-aggregate(IDX~Aggression,FUN=length,data=reports.vehicles)
+P01
+
+P01$fraction = P01$IDX / sum(P01$IDX)
+P01$ymax = cumsum(P01$fraction)
+P01$ymin = c(0, head(P01$ymax, n=-1))
+
+Aggression <- ggplot(P01, aes(fill=Aggression, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Aggressive Behavior")
+
+Aggression
+
+ggsave(Aggression, file="Aggresion.png")
+```
+
+
+```{r problem field analysis intoxication drugs}
+#Intoxication or Drugs
+P02<-aggregate(IDX~IntoxDrugs,FUN=length,data=reports.vehicles)
+P02
+
+P02$fraction = P02$IDX / sum(P02$IDX)
+P02$ymax = cumsum(P02$fraction)
+P02$ymin = c(0, head(P02$ymax, n=-1))
+
+Intoxication <- ggplot(P02, aes(fill=IntoxDrugs, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Intoxication and/or Drugs")
+
+Intoxication
+
+ggsave(Intoxication, file="Intoxication.png")
+```
+
+
+```{r problem field analysis public right of way}
+#Obstructs Public Right-of-Way
+P03<-aggregate(IDX~ObstructsRightofWay,FUN=length,data=reports.vehicles)
+P03
+
+P03$fraction = P03$IDX / sum(P03$IDX)
+P03$ymax = cumsum(P03$fraction)
+P03$ymin = c(0, head(P03$ymax, n=-1))
+
+RightofWay <- ggplot(P03, aes(fill=ObstructsRightofWay, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Obstructs Public Right-of-Way")
+
+RightofWay
+
+ggsave(RightofWay, file="RightofWay.png")
+```
+
+```{r problem field analysis public spaces}
+#Misuse of Public Spaces
+P04<-aggregate(IDX~MisusePublicSpaces,FUN=length,data=reports.vehicles)
+P04
+
+
+P04$fraction = P04$IDX / sum(P04$IDX)
+P04$ymax = cumsum(P04$fraction)
+P04$ymin = c(0, head(P04$ymax, n=-1))
+
+MisuseofPublicSpaces <- ggplot(P04, aes(fill=MisusePublicSpaces, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Misuse of Public Spaces")
+
+MisuseofPublicSpaces
+
+ggsave(MisuseofPublicSpaces, file="MisuseofPublicSpaces.png")
+```
+
+```{r problem field analysis structures or tents}
+#Are structures or tents present?
+P05<-aggregate(IDX~StructuresTentsPresent,FUN=length,data=reports.vehicles)
+P05
+
+P05$fraction = P05$IDX / sum(P05$IDX)
+P05$ymax = cumsum(P05$fraction)
+P05$ymin = c(0, head(P05$ymax, n=-1))
+
+Tents <- ggplot(P05, aes(fill=StructuresTentsPresent, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Are Structures or Tents Present")
+
+Tents
+
+ggsave(Tents, file="Tents.png")
+```
+
+```{r problem field analysis trash biohazard}
+#Excessive trash or biohazards
+P06<-aggregate(IDX~ExcessiveTrash,FUN=length,data=reports.vehicles)
+P06
+P06 <- P06[-2,]
+
+P06$fraction = P06$IDX / sum(P06$IDX)
+P06$ymax = cumsum(P06$fraction)
+P06$ymin = c(0, head(P06$ymax, n=-1))
+
+Biohazard <- ggplot(P06, aes(fill=ExcessiveTrash, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Excessive Trash or Biohazard")
+
+Biohazard
+
+ggsave(Biohazard, file="Biohazard.png")
+
+```
+
+```{r problem field analysis damage to environment}
+#Damage to the environment
+P07<-aggregate(IDX~DamageEnvironment,FUN=length,data=reports.vehicles)
+P07<- P07[-2,]
+
+P07$fraction = P07$IDX / sum(P07$IDX)
+P07$ymax = cumsum(P07$fraction)
+P07$ymin = c(0, head(P07$ymax, n=-1))
+
+
+EnvironmentDamage <- ggplot(P07, aes(fill=DamageEnvironment, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Damage to the Environment")
+
+EnvironmentDamage
+
+ggsave(EnvironmentDamage, file="EnvironmentDamage.png")
+```
+
+
+How many have children? Dogs? Medically fragile people?
+```{r reports.vehicles children dogs medical}
+#Is the site occupied?
+occ2<-aggregate(IDX~Occupied,FUN=length,data=reports.vehicles)
+occ2
+
+#need to replace no/No/not sure/yes/8-Jun. 
+#quick subset for Sandra
+
+occ_temp <- occ[-1,]
+occ_temp <- occ_temp[-2,]
+
+occ_temp
+
+occ_temp$fraction = occ_temp$IDX / sum(occ_temp$IDX)
+occ_temp$ymax = cumsum(occ_temp$fraction)
+occ_temp$ymin = c(0, head(occ_temp$ymax, n=-1))
+
+occupied <- ggplot(occ_temp, aes(fill=Occupied, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Is the Site Occupied")
+
+occupied
+```
+
+```{r}
+#Children present
+children2<-aggregate(IDX~Children,FUN=length,data=reports.vehicles)
+children2
+
+children2$fraction = children2$IDX / sum(children2$IDX)
+children2$ymax = cumsum(children2$fraction)
+children2$ymin = c(0, head(children2$ymax, n=-1))
+
+childrenplot <- ggplot(children2, aes(fill=Children, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Are Children Present?")
+
+childrenplot
+```
+
+```{r}
+#Dogs present
+dogs2<-aggregate(IDX~Dogs,FUN=length,data=reports.vehicles)
+dogs2
+
+dogs2$fraction = dogs2$IDX / sum(dogs2$IDX)
+dogs2$ymax = cumsum(dogs2$fraction)
+dogs2$ymin = c(0, head(dogs2$ymax, n=-1))
+
+dogsplot <- ggplot(dogs2, aes(fill=Dogs, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Are Dogs Present?")
+
+dogsplot
+```
+
+```{r}
+#Medically Fragile people
+med2<-aggregate(IDX~MedicalFragility,FUN=length,data=reports.vehicles)
+med2
+
+med2 <- med2[-1,]
+med2
+falsies <- med2[1,2] + med2[2,2]
+truesies <- med2[3,2] + med2[4,2]
+
+
+IDX<- c(truesies, falsies)
+MedicalFragility <- c("TRUE", "FALSE")
+med2<-data.frame(MedicalFragility, IDX)
+
+
+med2$fraction = med2$IDX / sum(med2$IDX)
+med2$ymax = cumsum(med2$fraction)
+med2$ymin = c(0, head(med2$ymax, n=-1))
+
+med2plot <- ggplot(med2, aes(fill=MedicalFragility, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+     geom_rect(colour="grey30") +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+     theme_bw() +
+     theme(panel.grid=element_blank()) +
+     theme(axis.text=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+     labs(title="Are Medically Fragile People Present?")
+
+med2plot
+```
+
+```{r write donut files to JSON}
+
+P07 %>% 
+    toJSON() %>%
+    write_lines("EnvironmentDamage.json")
+
+P06 %>% 
+    toJSON() %>%
+    write_lines("BiohazardTrash.json")
+
+P05 %>% 
+    toJSON() %>%
+    write_lines("TentsPresent.json")
+
+P04 %>% 
+    toJSON() %>%
+    write_lines("MisusePublicSpaces.json")
+
+P03 %>% 
+    toJSON() %>%
+    write_lines("ObstructsRightofWay.json")
+
+P02 %>% 
+    toJSON() %>%
+    write_lines("IntoxDrugs.json")
+
+P01 %>% 
+    toJSON() %>%
+    write_lines("Aggression.json")
+```
+
+
+### Estimating the number of campers
+Reimport the dataset (with the num_campers column:)
+```{r}
+REIMPORT = "Replicate_Num_campers_correction/campsite_reports_with_num_campers_spatial_join.csv"
+numcamps = read.csv(REIMPORT)
+```
+
+Average number of people reported per campsite (descriptive statistics):
+```{r}
+summary(numcamps$number_of_campers)
+
+numcamps$number_of_campers
+max(numcamps$number_of_campers, na.rm=TRUE)
+
+numcamps$number_of_campers[which(numcamps$number_of_campers == max(numcamps$number_of_campers, na.rm=TRUE))]
+which(numcamps$number_of_campers == max(numcamps$number_of_campers, na.rm=TRUE))
+
+numcamps[17173,]
+sub2 <- numcamps[-17173,]
+
+summary(sub2$number_of_campers)
+which(sub2$number_of_campers== max(sub2$number_of_campers, na.rm=TRUE))
+sub2[30839,]
+
+sub3<-sub2[-30839,]
+
+
+summary(sub3$number_of_campers)
+which(sub3$number_of_campers== max(sub3$number_of_campers, na.rm=TRUE))
+sub3[31337,]
+
+sub4<-sub3[-31337,]
+summary(sub4$number_of_campers)
+which(sub4$number_of_campers== max(sub4$number_of_campers, na.rm=TRUE))
+sub4[22196,]
+
+```
+
+Outlier removal before mean:
+```{r}
+outlier(numcamps$number_of_campers)
+
+boxplot(numcamps$number_of_campers)
+mine<-boxplot(numcamps$number_of_campers)
+outliers<-mine$out
+mine$names
+mine$stats
+
+min(outliers)
+max(outliers)
+sub.noout<-numcamps[numcamps$number_of_campers<12.5,]
+
+boxplot(sub.noout$number_of_campers)
+summary(sub.noout$number_of_campers)
+```
+
+Average number of campers per site: 4.065 (if assume trim of <50, then it's 5; if assume heavy trim of 12.5, then it's 3.6).

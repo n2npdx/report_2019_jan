@@ -1,0 +1,222 @@
+---
+title: "Campsite Sweeps"
+author: "Katy McKinney-Bock"
+output: html_notebook
+---
+
+# Imports
+```{r}
+library(tidyverse)
+library(readr)
+library(jsonlite)
+```
+
+```{r}
+# Requirements:
+#     Sweeps file must have a neighborhoods column; can be created via spatialjoin.py.
+SWEEPS = "../data/sweeps/sweeps_neighborhoods_joined_v04.csv"
+```
+
+Plot Functions:
+```{r}
+month_counts_plot <- function(data, date_col, counts_col, title, count_axis_label, fill_color="darkblue")
+          {
+          plot <- ggplot(data, aes(date_col, counts_col)) +
+                   geom_bar(stat="identity", fill=fill_color) +
+                   ggtitle(title) +
+                   xlab("Date") + ylab(count_axis_label) +
+                   theme(axis.text.x=element_text(size  = 10,
+                                        angle = 45,
+                                        hjust = 1,
+                                        vjust = 1))
+          return(plot)
+          }
+```
+
+# Read in file, convert dates:
+* Check date format
+```{r}
+sweeps<-read.csv(file=SWEEPS,header=TRUE)
+sweeps<- cbind(sweeps, as.Date(sweeps$ReportDate, "%m/%d/%Y"))
+colnames(sweeps)[colnames(sweeps)=="as.Date(sweeps$ReportDate, \"%m/%d/%Y\")"] <- "NewReportDate"
+```
+
+Aggregate by month:
+```{r}
+ReportDate2 <- as.Date(sweeps$NewReportDate)
+short.date = strftime(ReportDate2, "%Y-%m")
+sweeps.month = aggregate(Location~short.date, FUN = length, data=sweeps)
+colnames(sweeps.month)<- c("Month","Count")
+```
+
+## What is average number of sweeps per week? Per month?
+```{r}
+m.avg<- mean(sweeps.month$Count)
+m.med<- median(sweeps.month$Count)
+print("By Month, average and median:") 
+m.avg
+m.med
+```
+
+
+# 3-neighborhood subset:
+```{r}
+sweeps.sub <- 
+  sweeps %>%
+  filter(NAME %in% c("HOSFORD-ABERNETHY", "BUCKMAN", "KERNS"))
+```
+
+3-neighborhood subset, aggregated:
+```{r}
+ReportDate2 <- as.Date(sweeps.sub$NewReportDate)
+short.date = strftime(ReportDate2, "%Y-%m")
+sweeps.sub.month = aggregate(Location~short.date, FUN = length, data=sweeps.sub)
+colnames(sweeps.sub.month)<- c("Month","Count")
+```
+
+## What is average number of sweeps per week? Per month?
+```{r}
+m.avg<- mean(sweeps.sub.month$Location)
+m.med<- median(sweeps.sub.month$Location)
+print("By Month, Buckman/Hosford-Abernethy/Kerns,  average and median:") 
+m.avg
+m.med
+```
+
+# Plots
+```{r}
+MonthPlot <- month_counts_plot(sweeps.month, sweeps.month$Month, sweeps.month$Count, 
+                               "Campsite Sweeps  \n 2016-2018", "Number of Sites Swept")
+MonthPlot
+
+MonthPlot.sub <- month_counts_plot(sweeps.sub.month, sweeps.sub.month$Month, sweeps.sub.month$Count,                                "Campsite Sweeps, Buckman/Hosford-Abernety/Kerns  \n 2016-2018", 
+                                "Number of Sites Swept",
+                                "purple")
+MonthPlot.sub <- MonthPlot.sub +
+                 scale_y_continuous(limit = c(0, 100))
+MonthPlot.sub
+
+MonthPlot.sub_samescale <- MonthPlot.sub +
+                           scale_y_continuous(limit = c(0, 300))
+MonthPlot.sub_samescale
+
+ggsave(filename="MonthPlot_v04.pdf", plot=MonthPlot)
+ggsave(filename="MonthPlot_3neighborhoods_v04.pdf", plot=MonthPlot.sub)
+ggsave(filename="MonthPlot_3neighborhoods_samescale_v04.pdf", plot=MonthPlot.sub_samescale)
+```
+
+# Weekly Aggregate:
+Aggregate by week, all PDX:
+```{r}
+Week = strftime(sweeps$NewReportDate, "%Y-%m-%d")
+sweeps.week <-  aggregate(ReportDate~Week,FUN=length,data=sweeps)
+colnames(sweeps.week)<-c("Week","Count")
+```
+
+```{r TEMP workspace for weekly sweeps}
+names(sweeps.week) = c("Week", "Count")
+sweeps.week %>% 
+    toJSON() %>%
+    write_lines("CampsiteSweeps_CountsbyWeek.json")
+
+TEMP <- month_counts_plot(sweeps.week, sweeps.week$Week, sweeps.week$Count,
+                           "Campsite Sweeps, weekly  \n 2016-2018", 
+                                "Number of Sites Swept",
+                                "dark blue")
+
+TEMP
+
+TEMP2 <- ggplot(sweeps.week, aes(x=Week, group=1)) +
+          geom_line(aes(y = Count, colour="Count")) +
+          theme(axis.text.x=element_text(size  = 10,
+                                        angle = 45,
+                                        hjust = 1,
+                                        vjust = 1))
+
+TEMP2
+
+```
+
+
+## What is average number of sweeps per week?
+```{r}
+m.avg<- mean(sweeps.week$Count)
+m.med<- median(sweeps.week$Count)
+print("By Week,  average and median:") 
+m.avg
+m.med
+
+sd(sweeps.week$Count)
+```
+
+3-neighborhood subset:
+```{r}
+Week <- strftime(sweeps.sub$NewReportDate, "%Y-%m-%d")
+sweeps.sub.week <-  aggregate(ReportDate~Week,FUN=length,data=sweeps.sub)
+colnames(sweeps.sub.week)<-c("Week","Count")
+```
+
+## What is average number of sweeps per week for the subset?
+```{r}
+m.avg<- mean(sweeps.sub.week$Count)
+m.med<- median(sweeps.sub.week$Count)
+print("By Week,  average and median:") 
+m.avg
+m.med
+
+print("Standard Deviation, weekly:")
+sd(sweeps.sub.week$Count)
+```
+
+
+```{r}
+WeekPlot <- month_counts_plot(sweeps.week, sweeps.week$Week, sweeps.week$Count, 
+                               "Campsite Sweeps  \n 2016-2018", "Number of Sites Swept")
+WeekPlot
+
+WeekPlot.sub <- month_counts_plot(sweeps.sub.week, sweeps.sub.week$Week, sweeps.sub.week$Count,                                "Campsite Sweeps, Buckman/Hosford-Abernety/Kerns  \n 2016-2018", 
+                                "Number of Sites Swept",
+                                "purple")
+WeekPlot.sub <- WeekPlot.sub +
+                 scale_y_continuous(limit = c(0, 30))
+WeekPlot.sub
+
+WeekPlot.sub_samescale <- WeekPlot.sub +
+                           scale_y_continuous(limit = c(0, 70))
+WeekPlot.sub_samescale
+
+ggsave(filename="WeekPlot.pdf", plot=WeekPlot)
+ggsave(filename="WeekPlot_3neighborhoods.pdf", plot=WeekPlot.sub)
+ggsave(filename="WeekPlot_3neighborhoods_samescale_.pdf", plot=WeekPlot.sub_samescale)
+```
+
+
+# Average for 2018 for sweeps per week:
+```{r}
+sweeps.week.2018 <- sweeps.week %>% filter(Week >= as.Date("2018-01-01") & Week <= as.Date("2018-10-31"))
+sweeps.week.2017 <- sweeps.week %>% filter(Week >= as.Date("2017-01-01") & Week <= as.Date("2017-12-31"))
+
+mean(sweeps.week.2018$Count)
+
+sum(sweeps.week.2018$Count)
+sum(sweeps.week.2017$Count)
+
+```
+
+# Write out aggregates to csv/JSON
+```{r}
+names(sweeps.month) = c("Month", "Count")
+sweeps.month %>% 
+    toJSON() %>%
+    write_lines("Sweeps_CountsbyMonth.json")
+
+names(sweeps.sub.month) = c("Month", "Count")
+sweeps.sub.month %>% 
+    toJSON() %>%
+    write_lines("Sweeps_CountsbyMonth_3neighborhoods.json")
+
+sweeps.sub.week %>% 
+    toJSON() %>%
+    write_lines("Sweeps_CountsbyWeek_3neighborhoods.json")
+```
+

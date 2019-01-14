@@ -1,0 +1,59 @@
+---
+title: "Deidentify Campsite Reports"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(stringr)
+```
+
+```{r}
+# Requirements:
+#     One Point Reports file must have a neighborhoods column to do subset; can be created via 
+#     spatialjoin.py.
+#
+#     NOTE TO SELF: I need to re-clean and REPROJECT this dataset using the ipython notebook.
+#     Can only do this once I figure out which coordinate system to project to (talk with Lynn)
+#     Then, I can do the cleaning and re-estimate the number of campers. It will then go into R; maybe 
+#     some changes to the import and cleaning functions may have to happen.
+
+# ONEPOINT = "../data/onepointcontactreports/campsite_reports_processed_no_vehicles_deidentified_neighborhoods_joined_MANUAL_TEST_TEMP_FINAL.csv"
+
+ONEPOINT = "../data/onepointcontactreports/campsite_reports_processed_cols_nums_02.csv"
+```
+
+
+Read in file, convert dates:
+```{r}
+
+reports<-read.csv(file=ONEPOINT,header=TRUE,na.strings="")
+
+#subset the data only if lat/long and all location fields are missing:
+reports <- reports %>%
+  filter(!(is.na(Date.Received) == TRUE &
+         is.na(Where.is.the.campsite.concern.located..Please.provide.an.address.if.possible..If.no.address.is.available..please.provide.a.complete.description.of.the.site.s.location.) == TRUE &
+         is.na(If.having.difficulty.with.the.map..please.type.in.the.nearest.address.or.intersection..for.example..SW.Market.and.SW.14th..and.scroll.to.pinpoint.the.location...User.Specified.) == TRUE &
+         is.na(If.having.difficulty.with.the.map..please.type.in.the.nearest.address.or.intersection..for.example..SW.Market.and.SW.14th..and.scroll.to.pinpoint.the.location...System.Verified.) == TRUE &
+         is.na(lon) == TRUE &
+         is.na(lat) == TRUE
+           ))
+```
+
+
+Remove repetitive/identifying columns and optional write-out to csv).
+This was used to send into the spatialjoin_campsitereports.py.
+Then, taken back out and manually fixed up (for now) to take back into this script.
+EXTRACT this little script and make it part of the pipeline on its own. 
+```{r}
+colnames(reports)
+drops <- c("X",
+           "What.was.the.make.and.model.of.the.vehicle.",
+           "What.is.the.license.plate..if.available.",
+           "Is.there.anything.else.we.should.know..When.do.you.see.people.present.",
+           "Neighborhood"
+           )
+reports.writeout <- reports[ , !(names(reports) %in% drops)]
+
+write.csv(reports.writeout, file="campsite_reports_processed_deidentified_02.csv")
+```

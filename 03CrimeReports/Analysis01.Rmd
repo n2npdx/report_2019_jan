@@ -1,0 +1,309 @@
+---
+title: "Crime Data Analysis"
+output: html_notebook
+---
+
+# Imports and Cleaning
+```{r library}
+library(tidyverse)
+library(stringr)
+library(readr)
+library(jsonlite)
+library(ISOweek)
+library(stringr)
+library(ggthemes)
+library(tseries)
+library(colortools)
+library(astsa)
+library(forecast)
+library(ggfortify)
+```
+
+```{r data}
+# Requirements:
+# This dataset only has crime reports with lat long.
+# Raw: 207602
+# Filtered to lat-long: 161439
+
+CRIME = "../data/crimereports/crime_neighborhoods_joined_CEID_v01.csv"
+```
+
+```{r imports}
+crime <- read.csv(file=CRIME, header=TRUE)
+```
+
+```{r functions}
+month_counts_plot <- function(data, date_col, counts_col, title, count_axis_label, fill_color="darkred")
+          {
+          plot <- ggplot(data, aes(date_col)) +
+                   geom_line(y = aes(counts_col)) +
+                   ggtitle(title) +
+                   xlab("Date") + ylab(count_axis_label) +
+                   theme(axis.text.x=element_text(size  = 10,
+                                        angle = 45,
+                                        hjust = 1,
+                                        vjust = 1))
+          return(plot)
+}
+```
+
+```{r set filter categories}
+levels(crime$Offense.Category)
+
+#from PPB OpenData
+PersonCrimes <- c("Assault Offenses", "Homicide Offenses", "Human Trafficking Offenses",
+                  "Kidnapping/Abduction", "Sex Offenses", "Sex Offenses, Nonforcible")
+
+PropertyCrimes <- c("Arson", "Bribery", "Burglary", "Counterfeiting/Forgery", "Embezzlement",
+                    "Extortion/Blackmail", "Fraud Offenses", "Larceny Offenses", "Motor Vehicle Theft",
+                    "Robbery", "Stolen Property Offenses", "Vandalism")
+
+SocietyCrimes <- c("Animal Cruelty Offenses","Drug/Narcotic Offenses", "Gambling Offenses", 
+                   "Pornography/Obscene Material", "Prostitution Offenses", "Weapon Law Violations")
+
+```
+
+# All Portland Analysis
+
+```{r dates and month aggregation for all pdx}
+crime.pdx <- crime %>% mutate(Report.NewDate = mdy(Report.Date))
+crime.pdx <- crime.pdx %>% group_by(Month=floor_date(Report.NewDate, "month"))
+
+crime.pdx.month <- aggregate(Report.NewDate~Month, FUN=length, data=crime.pdx)
+colnames(crime.pdx.month) <- c("Month", "Count")
+```
+
+```{r}
+
+jan.oct.2016 <-
+                crime.pdx.month %>% 
+                filter(Month >= as.Date("2016-01-01") & Month <= as.Date("2016-10-01"))
+  
+jan.oct.2017 <- 
+                crime.pdx.month %>% 
+                filter(Month >= as.Date("2017-01-01") & Month <= as.Date("2017-10-01"))
+                                          
+jan.oct.2018 <- 
+                crime.pdx.month %>% 
+                filter(Month >= as.Date("2018-01-01") & Month <= as.Date("2018-10-01"))
+
+sum(jan.oct.2018$Count) / sum(jan.oct.2017$Count)
+
+sum(jan.oct.2017$Count) / sum(jan.oct.2016$Count)
+```
+
+
+# Hosford-Abernethy/Buckman/Kerns Analysis
+```{r filter to HA-B-K}
+crime.habk <- 
+  crime %>%
+  filter(NAME_RLIS %in% c("HOSFORD-ABERNETHY", "BUCKMAN", "KERNS"))
+```
+
+
+```{r dates and month aggregation for habk}
+crime.habk <- crime.habk %>% mutate(Report.NewDate = mdy(Report.Date))
+crime.habk <- crime.habk %>% group_by(Month=floor_date(Report.NewDate, "month"))
+
+crime.habk.month <- aggregate(Report.NewDate~Month, FUN=length, data=crime.habk)
+colnames(crime.habk.month) <- c("Month", "Count")
+```
+
+```{r}
+
+jan.oct.2016.habk <-
+                crime.habk.month %>% 
+                filter(Month >= as.Date("2016-01-01") & Month <= as.Date("2016-10-01"))
+  
+jan.oct.2017.habk <- 
+                crime.habk.month %>% 
+                filter(Month >= as.Date("2017-01-01") & Month <= as.Date("2017-10-01"))
+                                          
+jan.oct.2018.habk <- 
+                crime.habk.month %>% 
+                filter(Month >= as.Date("2018-01-01") & Month <= as.Date("2018-10-01"))
+
+
+sum(jan.oct.2017.habk$Count) / sum(jan.oct.2016.habk$Count)
+
+1 - sum(jan.oct.2018.habk$Count) / sum(jan.oct.2017.habk$Count)
+```
+
+
+# CEID Replication Analysis
+```{r filter data to CEID and person and property crimes}
+crime.ceid <-  
+            crime %>%
+               filter(crime$Offense.Category %in% PersonCrimes |
+                        crime$Offense.Category %in% PropertyCrimes) 
+
+crime.ceid <-
+              crime.ceid %>%
+              filter(crime.ceid$name == "Central Eastside Industrial")
+```
+
+# Deal with dates and aggregate by month
+```{r date conversion and month aggregation}
+crime.ceid <- crime.ceid %>% mutate(Report.NewDate = mdy(Report.Date))
+crime.ceid <- crime.ceid %>% group_by(Month=floor_date(Report.NewDate, "month"))
+
+crime.ceid.month <- aggregate(Report.NewDate~Month, FUN=length, data=crime.ceid)
+colnames(crime.ceid.month) <- c("Month", "Count")
+```
+
+
+# Jan-Oct 2017 and Jan-Oct 2018
+```{r}
+
+crime.ceid.nov2017 <- crime.ceid.month %>% filter(crime.ceid.month$Month == "2017-11-01")
+crime.ceid.oct2017 <- crime.ceid.month %>% filter(crime.ceid.month$Month == "2017-10-01")
+crime.ceid.oct2018 <- crime.ceid.month %>% filter(crime.ceid.month$Month == "2018-10-01")
+
+crime.ceid.oct2018$Count/crime.ceid.nov2017$Count
+
+Tenmo.2017 <- 114+129+153+150+144+160+164+188+153+129
+Tenmomo.2018 <- 161+132+141+145+158+117+180+147+201+187
+
+Tenmo.2017
+Tenmomo.2018/Tenmo.2017
+```
+
+
+# Plots
+```{r month plot}
+month_counts_plot <- function(data, date_col, counts_col, title, count_axis_label, fill_color="darkred")
+          {
+          plot <- ggplot(data, aes(date_col, counts_col)) +
+                   geom_line(color=fill_color) +
+                   geom_point(size=.5, color=fill_color) +
+                   ggtitle(title) +
+                   xlab("Date") + ylab(count_axis_label) +
+                   theme(axis.text.x=element_text(size  = 10,
+                                        angle = 45,
+                                        hjust = 1,
+                                        vjust = 1)) +
+                   theme_hc()+ scale_colour_hc() 
+          return(plot)
+}
+
+ceidplot<- month_counts_plot(crime.ceid.month, crime.ceid.month$Month, crime.ceid.month$Count, "Person and Property Crimes \nCEID Boundaries, 2015-2018", "Count of Crime Reports", fill_color="yellow4") 
+            
+saveplot <- ceidplot + 
+  scale_x_date(date_breaks="2 months", date_minor_breaks="1 month", date_labels = "%b %Y") +
+  scale_y_continuous(breaks=c(0, 25, 50, 75, 100, 125, 150, 175, 200, 225), limits=c(0,210))
+  # geom_smooth(method = "loess", se = FALSE, span=3)
+
+ggsave(saveplot, file="CEID_PersonPropertyCrimes_20152018.png", width=7, height=4.5)
+
+
+crime.ceid.month %>%
+  toJSON() %>%
+  write_lines("CEID_crimereports_bymonth.json")
+
+```
+
+```{r}
+# Extract month and year and store in separate columns
+crime.ceid.month$year <- format(crime.ceid.month$Month, format = "%Y")
+crime.ceid.month$month_num <- format(crime.ceid.month$Month, format = "%m")
+
+# Create a colour palette using the `colortools` package
+year_pal <- sequential(color = "darkturquoise", percentage = 5, what = "value")
+
+# Make the plot
+ggplot(crime.ceid.month, aes(x = month_num, y = Count, group = year)) +
+	geom_line(aes(colour = year)) +
+	theme_classic() + 
+	scale_color_manual(values = year_pal)
+```
+
+
+
+# Time Series analysis
+```{r}
+# Specify start and end year, measurement frequency (monthly = 12)
+crime.ceid.month.ts <- ts(crime.ceid.month$Count, start = 2015, end = 2018, freq = 12)  
+
+# Decompose using `stl()`
+crime.ceid.month_stl <- stl(crime.ceid.month.ts, s.window = "period")
+crime.ceid.month_stl
+
+# Generate plots
+plot(crime.ceid.month_stl)  # top=original data, second=estimated seasonal, third=estimated smooth trend, bottom=estimated irregular element i.e. unaccounted for variation
+monthplot(crime.ceid.month.ts, choice = "seasonal") 
+
+adf.test(crime.ceid.month.ts, alternative = "stationary")
+
+Acf(crime.ceid.month.ts)
+Pacf(crime.ceid.month.ts)
+
+seasonplot(crime.ceid.month.ts)
+
+fit2 <- auto.arima(crime.ceid.month.ts, seasonal=TRUE)
+summary(fit2)
+
+tsdisplay(residuals(fit2), lag.max=45, main='(0,0,0) Model Residuals')
+
+fcast <- forecast(fit2, level=c(.85,.95), h=12)
+plot(fcast)
+
+#Credits:
+#https://www.datascience.com/blog/introduction-to-forecasting-with-arima-in-r-learn-data-science-tutorials
+#https://ourcodingclub.github.io/2017/04/26/time.html
+```
+
+
+# Percent change in crime for CEID person/property to compare with all PDX
+```{r}
+jan.oct.2016.ceid <-
+                crime.ceid.month %>% 
+                filter(Month >= as.Date("2016-01-01") & Month <= as.Date("2016-10-01"))
+  
+jan.oct.2017.ceid <- 
+                crime.ceid.month %>% 
+                filter(Month >= as.Date("2017-01-01") & Month <= as.Date("2017-10-01"))
+                                          
+jan.oct.2018.ceid <- 
+                crime.ceid.month %>% 
+                filter(Month >= as.Date("2018-01-01") & Month <= as.Date("2018-10-01"))
+
+
+1 - sum(jan.oct.2017.ceid$Count) / sum(jan.oct.2016.ceid$Count)
+
+sum(jan.oct.2018.ceid$Count) / sum(jan.oct.2017.ceid$Count)
+```
+
+# Percent change for all crime in CEID:
+```{r}
+crime.ceid.all <-
+              crime %>%
+              filter(crime$name == "Central Eastside Industrial")
+```
+
+```{r date conversion and month aggregation for CEID all crimes}
+crime.ceid.all <- crime.ceid.all %>% mutate(Report.NewDate = mdy(Report.Date))
+crime.ceid.all <- crime.ceid.all %>% group_by(Month=floor_date(Report.NewDate, "month"))
+
+crime.ceid.all.month <- aggregate(Report.NewDate~Month, FUN=length, data=crime.ceid.all)
+colnames(crime.ceid.all.month) <- c("Month", "Count")
+```
+
+```{r ALL crimes for ceid}
+jan.oct.2016.ceid.all <-
+                crime.ceid.all.month %>% 
+                filter(Month >= as.Date("2016-01-01") & Month <= as.Date("2016-10-01"))
+  
+jan.oct.2017.ceid.all <- 
+                crime.ceid.all.month %>% 
+                filter(Month >= as.Date("2017-01-01") & Month <= as.Date("2017-10-01"))
+                                          
+jan.oct.2018.ceid.all <- 
+                crime.ceid.all.month %>% 
+                filter(Month >= as.Date("2018-01-01") & Month <= as.Date("2018-10-01"))
+
+
+1 - sum(jan.oct.2017.ceid.all$Count) / sum(jan.oct.2016.ceid.all$Count)
+
+sum(jan.oct.2018.ceid.all$Count) / sum(jan.oct.2017.ceid.all$Count)
+```
+
